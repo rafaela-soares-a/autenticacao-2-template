@@ -1,8 +1,10 @@
+import { hash } from "bcryptjs"
 import { UserDatabase } from "../database/UserDatabase"
 import { GetUsersInput, GetUsersOutput, LoginInput, LoginOutput, SignupInput, SignupOutput } from "../dtos/UserDTO"
 import { BadRequestError } from "../errors/BadRequestError"
 import { NotFoundError } from "../errors/NotFoundError"
 import { User } from "../models/User"
+import { HashManager } from "../services/HashManager"
 import { IdGenerator } from "../services/IdGenerator"
 import { TokenManager } from "../services/TokenManager"
 import { TokenPayload, USER_ROLES } from "../types"
@@ -11,11 +13,28 @@ export class UserBusiness {
     constructor(
         private userDatabase: UserDatabase,
         private idGenerator: IdGenerator,
-        private tokenManager: TokenManager
-    ) {}
+        private tokenManager: TokenManager,
+        private hashManager: HashManager
+    ) { }
 
     public getUsers = async (input: GetUsersInput): Promise<GetUsersOutput> => {
-        const { q } = input
+        const { q, token } = input
+
+        if (!token) {
+            throw new BadRequestError("Token não enviado");
+        }
+
+        const payload = this.tokenManager.getPayload(token)
+
+        if(payload === null){
+            throw new BadRequestError ("token inválido")
+        }
+
+        if (payload.role !== USER_ROLES.ADMIN){
+            throw new BadRequestError ("Usuário não autorizado")
+        }
+
+        console.table({payload})
 
         if (typeof q !== "string" && q !== undefined) {
             throw new BadRequestError("'q' deve ser string ou undefined")
@@ -56,13 +75,16 @@ export class UserBusiness {
             throw new BadRequestError("'password' deve ser string")
         }
 
+       const hashedPassaword = await this.hashManager.hash(password)
+
         const id = this.idGenerator.generate()
 
         const newUser = new User(
             id,
             name,
             email,
-            password,
+            hashedPassaword,
+         
             USER_ROLES.NORMAL,
             new Date().toISOString()
         )
